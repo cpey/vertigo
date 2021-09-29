@@ -175,13 +175,6 @@ fn get_callers_recursive(
         return None;
     }
 
-    if cnt > 0 {
-        println!(
-            " + Function: {}, calling: {}, iteration: {}\n\tpath: {}",
-            name, callee, cnt, path
-        );
-    }
-
     if name.to_lowercase().eq("main") {
         return None;
     }
@@ -203,6 +196,35 @@ fn get_callers_recursive(
     return Some(call);
 }
 
+fn get_callers_thread(
+    name: &str,
+    path: &str,
+    callee: &str,
+    max_cnt: u32,
+    mut cnt: u32,
+    search_path: &str,
+) -> Result<thread::JoinHandle<Option<Vec<(String, String, String)>>>> {
+    let _name = name.to_string();
+    let _path = path.to_string();
+    let _callee = callee.to_string();
+    let _max_cnt = max_cnt;
+    let _cnt = cnt;
+    let _search_path = search_path.to_string();
+    let thread = thread::spawn(move || -> Option<Vec<(String, String, String)>> {
+        get_callers_recursive(&_name, &_path, &_callee, _max_cnt, _cnt, &_search_path)
+    });
+    Ok(thread)
+}
+
+fn print_info(calls: Vec<(String, String, String)>) {
+    for (name, path, callee) in calls {
+        println!(
+            " + Function: {}, calling: {}\n\tpath: {}",
+            name, callee, path
+        );
+    }
+}
+
 #[derive(StructOpt)]
 struct Opt {
     /// Path of the git repo in which to run the search.
@@ -216,9 +238,20 @@ struct Opt {
 
 fn main() {
     let args = Opt::from_args();
+    let mut threads = Vec::new();
 
     for n in &args.search_functions {
         println!("++ Call chain for {}", n);
-        get_callers_recursive(n, "", "", args.iterations, 0, &args.search_path);
+        let th = get_callers_thread(n, "", "", args.iterations, 0, &args.search_path);
+        threads.extend(th);
+    }
+    for t in threads {
+        match t.join() {
+            Ok(l) => match l {
+                Some(v) => print_info(v),
+                None => continue,
+            },
+            Err(_) => continue,
+        }
     }
 }
