@@ -5,98 +5,74 @@ List the chain of calls that end up to the given function. C codebases only.
 ## Options
 
 ```
-[cpey@nuc ~]$ ./vertigo --help
+[cpey@nuc vertigo]$ ./target/debug/vertigo -h
 vertigo 0.1.0
 
 USAGE:
-    vertigo --iterations <iterations> [search-functions]...
+    vertigo <search-path> --iterations <iterations> [search-functions]...
 
 FLAGS:
     -h, --help       Prints help information
     -V, --version    Prints version information
 
 OPTIONS:
-    -i, --iterations <iterations>    Number of iterations
+    -i, --iterations <iterations>    Number of iterations (defaults to 5)
 
 ARGS:
-    <search-functions>...    Function names to get the call chain for
+    <search-path>            Path of the git repo in which to run the search
+    <search-functions>...    List of the function names to get the call tree for
 ```
 
 ## Example
 
 ```
-[cpey@nuc openssl]$ ./vertigo EVP_CipherUpdate -i 2
-++ Call chain for EVP_CipherUpdate
- + Function: cms_kek_cipher, calling: EVP_CipherUpdate, iteration: 1
-        path: crypto/cms/cms_kari.c
- + Function: CMS_RecipientInfo_kari_decrypt, calling: cms_kek_cipher, iteration: 2
-        path: crypto/cms/cms_kari.c
- + Function: cms_RecipientInfo_kari_encrypt, calling: cms_kek_cipher, iteration: 2
-        path: crypto/cms/cms_kari.c
- + Function: enc_read, calling: EVP_CipherUpdate, iteration: 1
-        path: crypto/evp/bio_enc.c
- + Function: enc_write, calling: EVP_CipherUpdate, iteration: 1
-        path: crypto/evp/bio_enc.c
- + Function: enc_ctrl, calling: enc_write, iteration: 2
-        path: crypto/evp/bio_enc.c
- + Function: PKCS12_pbe_crypt, calling: EVP_CipherUpdate, iteration: 1
-        path: crypto/pkcs12/p12_decr.c
- + Function: PKCS12_item_decrypt_d2i, calling: PKCS12_pbe_crypt, iteration: 2
-        path: crypto/pkcs12/p12_decr.c
- + Function: PKCS12_item_i2d_encrypt, calling: PKCS12_pbe_crypt, iteration: 2
-        path: crypto/pkcs12/p12_decr.c
- + Function: try_decode_PKCS8Encrypted, calling: PKCS12_pbe_crypt, iteration: 2
-        path: crypto/store/loader_file.c
- + Function: ctr_BCC_block, calling: EVP_CipherUpdate, iteration: 1
-        path: crypto/rand/drbg_ctr.c
- + Function: ctr_BCC_blocks, calling: ctr_BCC_block, iteration: 2
-        path: crypto/rand/drbg_ctr.c
- + Function: ctr_BCC_init, calling: ctr_BCC_block, iteration: 2
-        path: crypto/rand/drbg_ctr.c
- + Function: ctr_df, calling: EVP_CipherUpdate, iteration: 1
-        path: crypto/rand/drbg_ctr.c
- + Function: ctr_update, calling: ctr_df, iteration: 2
-        path: crypto/rand/drbg_ctr.c
- + Function: ctr_update, calling: EVP_CipherUpdate, iteration: 1
-        path: crypto/rand/drbg_ctr.c
- + Function: drbg_ctr_instantiate, calling: ctr_update, iteration: 2
-        path: crypto/rand/drbg_ctr.c
- + Function: drbg_ctr_reseed, calling: ctr_update, iteration: 2
-        path: crypto/rand/drbg_ctr.c
- + Function: drbg_ctr_generate, calling: ctr_update, iteration: 2
-        path: crypto/rand/drbg_ctr.c
- + Function: drbg_ctr_generate, calling: EVP_CipherUpdate, iteration: 1
-        path: crypto/rand/drbg_ctr.c
- + Function: cipher_init, calling: EVP_CipherUpdate, iteration: 1
-        path: providers/fips/self_test_kats.c
- + Function: EVP_PKEY_encrypt_init, calling: cipher_init, iteration: 2
-        path: crypto/evp/pmeth_fn.c
- + Function: EVP_PKEY_decrypt_init, calling: cipher_init, iteration: 2
-        path: crypto/evp/pmeth_fn.c
- + Function: cipher_ctrl, calling: cipher_init, iteration: 2
-        path: engines/e_devcrypto.c
- + Function: self_test_cipher, calling: cipher_init, iteration: 2
-        path: providers/fips/self_test_kats.c
- + Function: KRB5KDF, calling: cipher_init, iteration: 2
-        path: providers/implementations/kdfs/krb5kdf.c
- + Function: self_test_cipher, calling: EVP_CipherUpdate, iteration: 1
-        path: providers/fips/self_test_kats.c
- + Function: self_test_ciphers, calling: self_test_cipher, iteration: 2
-        path: providers/fips/self_test_kats.c
- + Function: tls13_enc, calling: EVP_CipherUpdate, iteration: 1
-        path: ssl/record/ssl3_record_tls13.c
- + Function: do_ssl3_write, calling: tls13_enc, iteration: 2
-        path: ssl/record/rec_layer_s3.c
- + Function: test_tls13_encryption, calling: tls13_enc, iteration: 2
-        path: test/tls13encryptiontest.c
- + Function: test_afalg_aes_cbc, calling: EVP_CipherUpdate, iteration: 1
-        path: test/afalgtest.c
- + Function: encrypt_decrypt, calling: EVP_CipherUpdate, iteration: 1
-        path: test/evp_fetch_prov_test.c
- + Function: test_EVP_CIPHER_fetch, calling: encrypt_decrypt, iteration: 2
-        path: test/evp_fetch_prov_test.c
- + Function: cipher_test_enc, calling: EVP_CipherUpdate, iteration: 1
-        path: test/evp_test.c
- + Function: cipher_test_run, calling: cipher_test_enc, iteration: 2
-        path: test/evp_test.c
+[cpey@nuc vertigo]$ ./target/debug/vertigo -i 2 /home/cpey/repos/openssl/ SSL_ctrl
+++ Call chain for SSL_ctrl
+ + Function: set_protocol_version, calling: SSL_ctrl, iteration: 1
+        path: test/ssltest_old.c
+ + Function: SSL_clear_mode, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: SSL_set_mode, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: s_client_main, calling: SSL_set_mode, iteration: 2
+        path: apps/s_client.c
+ + Function: main, calling: SSL_set_mode, iteration: 2
+        path: demos/bio/client-arg.c
+ + Function: main, calling: SSL_set_mode, iteration: 2
+        path: demos/bio/client-conf.c
+ + Function: execute_test_ktls, calling: SSL_set_mode, iteration: 2
+        path: test/sslapitest.c
+ + Function: SSL_get_mode, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: SSL_set_mtu, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: mtu_test, calling: SSL_set_mtu, iteration: 2
+        path: test/dtls_mtu_test.c
+ + Function: DTLS_set_link_mtu, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: DTLS_get_link_min_mtu, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: s_client_main, calling: DTLS_get_link_min_mtu, iteration: 2
+        path: apps/s_client.c
+ + Function: sv_body, calling: DTLS_get_link_min_mtu, iteration: 2
+        path: apps/s_server.c
+ + Function: SSL_get_secure_renegotiation_support, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: print_stuff, calling: SSL_get_secure_renegotiation_support, iteration: 2
+        path: apps/s_client.c
+ + Function: print_connection_info, calling: SSL_get_secure_renegotiation_support, iteration: 2
+        path: apps/s_server.c
+ + Function: www_body, calling: SSL_get_secure_renegotiation_support, iteration: 2
+        path: apps/s_server.c
+ + Function: SSL_set_cert_flags, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: print_chain_flags, calling: SSL_set_cert_flags, iteration: 2
+        path: apps/lib/s_cb.c
+ + Function: SSL_clear_cert_flags, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: SSL_set_msg_callback_arg, calling: SSL_ctrl, iteration: 1
+        path: include/openssl/ssl.h
+ + Function: s_client_main, calling: SSL_set_msg_callback_arg, iteration: 2
+        path: apps/s_client.c
+[...]
 ```
