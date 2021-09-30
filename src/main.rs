@@ -8,7 +8,6 @@ use itertools::Itertools;
 use regex::Regex;
 use std::io::{self, BufRead};
 use std::process::{Command, Stdio};
-use std::thread;
 use structopt::StructOpt;
 
 fn get_function_name<'a>(
@@ -26,15 +25,18 @@ fn get_function_name<'a>(
     let re_h_func_regex = format!(r"# +define +([^ ].*)\(.*\).*{}\(.*", func);
     let re_h_func = Regex::new(&re_h_func_regex).unwrap();
     // header file: multiline #define on the first line
-    let re_h_m_file = Regex::new(r"\.h-").unwrap();
+    let re_h_m_file = Regex::new(r"\.h-#").unwrap();
     let re_h_m_path = Regex::new(r"(.*\.h)-").unwrap();
     let re_h_m_func_regex = format!(r"# +define +([^ ].*)\(.*\).*\\");
     let re_h_m_func = Regex::new(&re_h_m_func_regex).unwrap();
     // header file: multiline #define on the line below
-    let re_h_m_c_file = Regex::new(r"\.h:").unwrap();
-    let re_h_m_c_path = Regex::new(r"(.*\.h):").unwrap();
-    let re_h_m_c_func_regex = format!(r".*[\( \*]+({})\(.*", func);
-    let re_h_m_c_func = Regex::new(&re_h_m_c_func_regex).unwrap();
+    let re_h_m_c_file = Regex::new(r"\.h-[^#].*\\").unwrap();
+    let re_h_m_c_path = Regex::new(r"(.*\.h)-").unwrap();
+    // header file: multiline #define on the match line
+    let re_h_m_m_file = Regex::new(r"\.h:").unwrap();
+    let re_h_m_m_path = Regex::new(r"(.*\.h):").unwrap();
+    let re_h_m_m_func_regex = format!(r".*[\( \*]+({})\(.*", func);
+    let re_h_m_m_func = Regex::new(&re_h_m_m_func_regex).unwrap();
 
     if re_c_file.is_match(line) {
         let s = match re_c_func.captures(line) {
@@ -57,11 +59,18 @@ fn get_function_name<'a>(
         };
         Some((s, p, true))
     } else if *multi && re_h_m_c_file.is_match(line) {
-        let s = match re_h_m_c_func.captures(line) {
+        let s = "";
+        let p = match re_h_m_c_path.captures(line) {
             Some(x) => x.get(1).map_or("", |m| m.as_str()),
             None => return None,
         };
-        let p = match re_h_m_c_path.captures(line) {
+        Some((s, p, true))
+    } else if *multi && re_h_m_m_file.is_match(line) {
+        let s = match re_h_m_m_func.captures(line) {
+            Some(x) => x.get(1).map_or("", |m| m.as_str()),
+            None => return None,
+        };
+        let p = match re_h_m_m_path.captures(line) {
             Some(x) => x.get(1).map_or("", |m| m.as_str()),
             None => return None,
         };
@@ -81,99 +90,77 @@ fn get_function_name<'a>(
     }
 }
 
-fn get_callers(name: &str, search_path: &str) -> Result<Vec<(String, String, String)>> {
-    let _name = format!("{}", name);
-    let _search_path = format!("{}", search_path);
-    let thread = thread::spawn(move || -> Result<Vec<(String, String, String)>> {
-        let mut multi = false;
-        let mut m_caller = "".to_string();
-        let mut funcs = Vec::new();
-        let __name = format!("[\\* \\(]+{}\\(", _name);
-        // For some reason Command stalls when `find` carries the `-o` flag. Will need to run the
-        // search separately for .c and .h files.
-        // find . -name "*.c" -o -name "*.h" | xargs git grep -W <name>
-        let mut grep_c = Command::new("xargs")
-            .arg("git")
-            .arg("-C")
-            .arg(&_search_path)
-            .arg("grep")
-            .arg("-WE")
-            .arg(&__name)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to execute git");
+/// Returns a vector with all the callers for the given function name
+fn get_callers(name: &str, _search_path: &str) -> Result<Vec<(String, String, String)>> {
+    let mut multi = false;
+    let mut m_caller = "".to_string();
+    let mut funcs = Vec::new();
+    let _name = format!("[\\* \\(]+{}\\(", name);
 
-        let mut grep_h = Command::new("xargs")
-            .arg("git")
-            .arg("-C")
-            .arg(&_search_path)
-            .arg("grep")
-            .arg("-WE")
-            .arg(&__name)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .spawn()
-            .expect("Failed to execute git");
+    let mut grep_c = Command::new("git")
+        .arg("-C")
+        .arg(&_search_path)
+        .arg("grep")
+        .arg("-WE")
+        .arg(&_name)
+        .arg("*.c")
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to execute git");
 
-        Command::new("find")
-            .arg(&_search_path)
-            .arg("-name")
-            .arg("*.c")
-            .stdout(grep_c.stdin.unwrap())
-            .output()
-            .expect("Failed to execute find");
+    let mut grep_h = Command::new("git")
+        .arg("-C")
+        .arg(&_search_path)
+        .arg("grep")
+        .arg("-WE")
+        .arg(&_name)
+        .arg("*.h")
+        .stdout(Stdio::piped())
+        .spawn()
+        .expect("Failed to execute git");
 
-        Command::new("find")
-            .arg(&_search_path)
-            .arg("-name")
-            .arg("*.h")
-            .stdout(grep_h.stdin.unwrap())
-            .output()
-            .expect("Failed to execute find");
+    // Process data from .c files
+    let reader = io::BufReader::new(grep_c.stdout.take().expect("Failed to capture stdout"));
+    for line in reader.lines() {
+        let __name = format!("{}", name);
+        match line {
+            Ok(l) => match get_function_name(&name, &l, &multi) {
+                Some((n, p, _)) => funcs.push((n.to_string(), p.to_string(), __name)),
+                None => continue,
+            },
+            Err(_) => continue,
+        };
+    }
 
-        let reader = io::BufReader::new(grep_c.stdout.take().expect("Failed to capture stdout"));
-        for line in reader.lines() {
-            let ___name = format!("{}", _name);
-            match line {
-                Ok(l) => match get_function_name(&_name, &l, &multi) {
-                    Some((n, p, _)) => funcs.push((n.to_string(), p.to_string(), ___name)),
-                    None => continue,
-                },
-                Err(_) => continue,
-            };
-        }
-
-        let reader = io::BufReader::new(grep_h.stdout.take().expect("Failed to capture stdout"));
-        for line in reader.lines() {
-            let ___name = format!("{}", _name);
-            match line {
-                Ok(l) => match get_function_name(&_name, &l, &multi) {
-                    Some((n, p, m)) => {
-                        if multi == true && n == _name && m_caller != "" {
-                            funcs.push((m_caller, p.to_string(), ___name));
-                        } else if multi == false && m == false {
-                            funcs.push((n.to_string(), p.to_string(), ___name));
-                        }
-                        if m == true {
-                            m_caller = n.to_string();
-                        } else {
-                            m_caller = "".to_string();
-                        }
-                        multi = m;
+    // Process data from .h files
+    let reader = io::BufReader::new(grep_h.stdout.take().expect("Failed to capture stdout"));
+    for line in reader.lines() {
+        let __name = format!("{}", name);
+        match line {
+            Ok(l) => match get_function_name(&name, &l, &multi) {
+                Some((n, p, m)) => {
+                    if multi == true && n == name && m_caller != "" {
+                        let m_c = &m_caller;
+                        funcs.push((m_c.to_string(), p.to_string(), __name));
+                    } else if multi == false && m == false {
+                        funcs.push((n.to_string(), p.to_string(), __name));
                     }
-                    None => {
-                        multi = false;
+                    if m == true && n != "" {
+                        m_caller = n.to_string();
+                    } else if n != "" {
                         m_caller = "".to_string();
                     }
-                },
-                Err(_) => continue,
-            };
-        }
-        Ok(funcs)
-    });
-
-    thread.join().unwrap()
+                    multi = m;
+                }
+                None => {
+                    multi = false;
+                    m_caller = "".to_string();
+                }
+            },
+            Err(_) => continue,
+        };
+    }
+    Ok(funcs)
 }
 
 fn get_callers_recursive(
